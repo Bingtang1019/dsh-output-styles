@@ -25,6 +25,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The built `lib/client.js` now carries the DSH client module-table handoff
+  (`window.__ModuleLoader__.load({ id, factory })`) instead of being a bare ES
+  module. The Host serves every plugin bundle as a classic script and the client
+  module system reads a package's exports only from that registration, so the
+  previous artifact could not be mounted on DSH 0.2.1 without a user-side pnpm
+  patch of the installed tarball. Both client build paths (the repository build
+  and the consumer-side `prepare` bundle) emit the same registration, matching
+  the harness's own client-bundle preset. No runtime code changed.
+
 ## [0.6.24] - 2026-10-05
 
 undefined

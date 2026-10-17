@@ -4,9 +4,10 @@
 // against TypeScript-only syntax leaking into shipped output and against a
 // tarball missing the bundle patch.
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import vm from 'node:vm'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
@@ -39,10 +40,27 @@ if (typeof invariant.installInvariant !== 'function' || invariant.PACKAGE_NAME !
   throw new Error('lib/invariant.js exports an unexpected invariant face')
 }
 
-// 4. The client bundle is a plain ESM plugin face (decorate plugin).
-const client = await import(pathToFileURL(path.join(root, 'lib/client.js')).href)
-if (typeof client.apply !== 'function' || client.name !== 'dsh-output-styles-client') {
+// 4. The client bundle is a module-table registration, not an ES module: the
+// Host renders it as a classic `<script src>` and the client module system
+// reads exports only from the registration the script performs.
+const clientScript = new vm.Script(readFileSync(path.join(root, 'lib/client.js'), 'utf8'), {
+  filename: 'lib/client.js',
+})
+const registrations = []
+const window = { __ModuleLoader__: { load: (registration) => registrations.push(registration) } }
+clientScript.runInNewContext({ window })
+if (registrations.length !== 1) {
+  throw new Error(`lib/client.js registers ${registrations.length} factories, expected one`)
+}
+const [registration] = registrations
+if (registration.id !== 'dsh-output-styles') {
+  throw new Error(`lib/client.js registers "${registration.id}", expected "dsh-output-styles"`)
+}
+const client = registration.factory((specifier) => {
+  throw new Error(`lib/client.js requested external "${specifier}"; the client bundle must be self-contained`)
+})
+if (typeof client.apply !== 'function' || client.name !== 'dsh-output-styles-client' || !Array.isArray(client.inject)) {
   throw new Error('lib/client.js exports an unexpected client face')
 }
 
-console.log('artifacts OK: syntax + ESM imports + bundle patch present')
+console.log('artifacts OK: syntax + ESM host imports + client registration + bundle patch present')
